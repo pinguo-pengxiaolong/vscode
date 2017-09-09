@@ -26,4 +26,4 @@ npm_config_disturl=https://atom.io/download/electron \
 npm_config_target=$ELECTRON_VERSION \
 npm_config_runtime=electron \
 HOME=$ELECTRON_GYP_HOME \
-npm $*
+"$HOME"/.nvm/versions/node/v7.10.0/bin/npm $*

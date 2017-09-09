@@ -132,7 +132,8 @@ export class ExtensionService implements IExtensionService {
 		this._stopExtensionHostProcess();
 
 		this._extensionHostProcessWorker = this._instantiationService.createInstance(ExtensionHostProcessWorker, this);
-		this._extensionHostProcessWorker.onCrashed(([code, signal]) => this._onExtensionHostCrashed(code, signal));
+		// TODO:
+		// this._extensionHostProcessWorker.onCrashed(([code, signal]) => this._onExtensionHostCrashed(code, signal));
 		this._extensionHostProcessProxy = this._extensionHostProcessWorker.start().then(
 			(protocol) => {
 				return { value: this._createExtensionHostCustomers(protocol) };

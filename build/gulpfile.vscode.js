@@ -251,6 +251,7 @@ function packageTask(platform, arch, opts) {
 
 		const localExtensionDependencies = gulp.src('extensions/node_modules/**', { base: '.' });
 
+		// TODO:
 		const marketplaceExtensions = es.merge(...builtInExtensions.map(extension => {
 			return ext.fromMarketplace(extension.name, extension.version)
 				.pipe(rename(p => p.dirname = `extensions/${extension.name}/${p.dirname}`));
