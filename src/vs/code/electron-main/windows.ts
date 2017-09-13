@@ -19,7 +19,7 @@ import { IPathWithLineAndColumn, parseLineAndColumnAware } from 'vs/code/node/pa
 import { ILifecycleService, UnloadReason, IWindowUnloadEvent } from 'vs/platform/lifecycle/electron-main/lifecycleMain';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { ILogService } from 'vs/platform/log/common/log';
-import { IWindowSettings, OpenContext, IPath, IWindowConfiguration, INativeOpenDialogOptions, ReadyState } from 'vs/platform/windows/common/windows';
+import { IWindowSettings, OpenContext, IPath, IWindowConfiguration, INativeOpenDialogOptions, ReadyState, IPathsToWaitFor } from 'vs/platform/windows/common/windows';
 import { getLastActiveWindow, findBestWindowOrFolderForFile, findWindowOnWorkspace, findWindowOnExtensionDevelopmentPath, findWindowOnWorkspaceOrFolderPath } from 'vs/code/node/windowsFinder';
 import CommonEvent, { Emitter } from 'vs/base/common/event';
 import product from 'vs/platform/node/product';
@@ -77,6 +77,7 @@ interface IOpenBrowserWindowOptions {
 	filesToOpen?: IPath[];
 	filesToCreate?: IPath[];
 	filesToDiff?: IPath[];
+	filesToWait?: IPathsToWaitFor;
 
 	forceNewWindow?: boolean;
 	windowToUse?: CodeWindow;
@@ -119,6 +120,9 @@ export class WindowsManager implements IWindowsMainService {
 
 	private _onWindowClose = new Emitter<number>();
 	onWindowClose: CommonEvent<number> = this._onWindowClose.event;
+
+	private _onWindowLoad = new Emitter<number>();
+	onWindowLoad: CommonEvent<number> = this._onWindowLoad.event;
 
 	private _onActiveWindowChanged = new Emitter<CodeWindow>();
 	onActiveWindowChanged: CommonEvent<CodeWindow> = this._onActiveWindowChanged.event;
@@ -171,11 +175,6 @@ export class WindowsManager implements IWindowsMainService {
 			if (typeof state.workspacePath === 'string') {
 				state.folderPath = state.workspacePath;
 				state.workspacePath = void 0;
-			}
-
-			// TODO@Ben migration to new workspace ID
-			if (state.workspace) {
-				state.workspace.id = this.workspacesService.getWorkspaceId(state.workspace.configPath);
 			}
 		});
 	}
@@ -273,7 +272,6 @@ export class WindowsManager implements IWindowsMainService {
 	private onBeforeQuit(): void {
 		const currentWindowsState: ILegacyWindowsState = {
 			openedWindows: [],
-			openedFolders: [], // TODO@Ben migration so that old clients do not fail over data (prevents NPEs)
 			lastPluginDevelopmentHostWindow: this.windowsState.lastPluginDevelopmentHostWindow,
 			lastActiveWindow: this.lastClosedWindowState
 		};
@@ -376,6 +374,12 @@ export class WindowsManager implements IWindowsMainService {
 			filesToCreate = []; // diff ignores other files that do not exist
 		}
 
+		// When run with --wait, make sure we keep the paths to wait for
+		let filesToWait: IPathsToWaitFor;
+		if (openConfig.cli.wait && openConfig.cli.waitMarkerFilePath) {
+			filesToWait = { paths: [...filesToDiff, ...filesToOpen, ...filesToCreate], waitMarkerFilePath: openConfig.cli.waitMarkerFilePath };
+		}
+
 		//
 		// These are windows to open to show workspaces
 		//
@@ -409,7 +413,7 @@ export class WindowsManager implements IWindowsMainService {
 		const emptyToOpen = pathsToOpen.filter(win => !win.workspace && !win.folderPath && !win.filePath && !win.backupPath).length;
 
 		// Open based on config
-		const usedWindows = this.doOpen(openConfig, workspacesToOpen, workspacesToRestore, foldersToOpen, foldersToRestore, emptyToRestore, emptyToOpen, filesToOpen, filesToCreate, filesToDiff, foldersToAdd);
+		const usedWindows = this.doOpen(openConfig, workspacesToOpen, workspacesToRestore, foldersToOpen, foldersToRestore, emptyToRestore, emptyToOpen, filesToOpen, filesToCreate, filesToDiff, filesToWait, foldersToAdd);
 
 		// Make sure to pass focus to one of the windows if we open multiple
 		if (usedWindows.length > 1) {
@@ -451,10 +455,10 @@ export class WindowsManager implements IWindowsMainService {
 		}
 
 		// If we got started with --wait from the CLI, we need to signal to the outside when the window
-		// used for the edit operation is closed so that the waiting process can continue. We do this by
-		// deleting the waitMarkerFilePath.
+		// used for the edit operation is closed or loaded to a different folder so that the waiting
+		// process can continue. We do this by deleting the waitMarkerFilePath.
 		if (openConfig.context === OpenContext.CLI && openConfig.cli.wait && openConfig.cli.waitMarkerFilePath && usedWindows.length === 1 && usedWindows[0]) {
-			this.waitForWindowClose(usedWindows[0].id).done(() => fs.unlink(openConfig.cli.waitMarkerFilePath, error => void 0));
+			this.waitForWindowCloseOrLoad(usedWindows[0].id).done(() => fs.unlink(openConfig.cli.waitMarkerFilePath, error => void 0));
 		}
 
 		return usedWindows;
@@ -481,6 +485,7 @@ export class WindowsManager implements IWindowsMainService {
 		filesToOpen: IPath[],
 		filesToCreate: IPath[],
 		filesToDiff: IPath[],
+		filesToWait: IPathsToWaitFor,
 		foldersToAdd: IPath[]
 	) {
 		const usedWindows: CodeWindow[] = [];
@@ -532,12 +537,13 @@ export class WindowsManager implements IWindowsMainService {
 				else {
 
 					// Do open files
-					usedWindows.push(this.doOpenFilesInExistingWindow(bestWindowOrFolder, filesToOpen, filesToCreate, filesToDiff));
+					usedWindows.push(this.doOpenFilesInExistingWindow(bestWindowOrFolder, filesToOpen, filesToCreate, filesToDiff, filesToWait));
 
 					// Reset these because we handled them
 					filesToOpen = [];
 					filesToCreate = [];
 					filesToDiff = [];
+					filesToWait = void 0;
 				}
 			}
 
@@ -555,6 +561,7 @@ export class WindowsManager implements IWindowsMainService {
 					filesToOpen,
 					filesToCreate,
 					filesToDiff,
+					filesToWait,
 					forceNewWindow: true
 				}));
 
@@ -562,6 +569,7 @@ export class WindowsManager implements IWindowsMainService {
 				filesToOpen = [];
 				filesToCreate = [];
 				filesToDiff = [];
+				filesToWait = void 0;
 			}
 		}
 
@@ -575,12 +583,13 @@ export class WindowsManager implements IWindowsMainService {
 				const windowOnWorkspace = windowsOnWorkspace[0];
 
 				// Do open files
-				usedWindows.push(this.doOpenFilesInExistingWindow(windowOnWorkspace, filesToOpen, filesToCreate, filesToDiff));
+				usedWindows.push(this.doOpenFilesInExistingWindow(windowOnWorkspace, filesToOpen, filesToCreate, filesToDiff, filesToWait));
 
 				// Reset these because we handled them
 				filesToOpen = [];
 				filesToCreate = [];
 				filesToDiff = [];
+				filesToWait = void 0;
 
 				openFolderInNewWindow = true; // any other folders to open must open in new window then
 			}
@@ -592,12 +601,13 @@ export class WindowsManager implements IWindowsMainService {
 				}
 
 				// Do open folder
-				usedWindows.push(this.doOpenFolderOrWorkspace(openConfig, { workspace: workspaceToOpen }, openFolderInNewWindow, filesToOpen, filesToCreate, filesToDiff));
+				usedWindows.push(this.doOpenFolderOrWorkspace(openConfig, { workspace: workspaceToOpen }, openFolderInNewWindow, filesToOpen, filesToCreate, filesToDiff, filesToWait));
 
 				// Reset these because we handled them
 				filesToOpen = [];
 				filesToCreate = [];
 				filesToDiff = [];
+				filesToWait = void 0;
 
 				openFolderInNewWindow = true; // any other folders to open must open in new window then
 			});
@@ -613,12 +623,13 @@ export class WindowsManager implements IWindowsMainService {
 				const windowOnFolderPath = windowsOnFolderPath[0];
 
 				// Do open files
-				usedWindows.push(this.doOpenFilesInExistingWindow(windowOnFolderPath, filesToOpen, filesToCreate, filesToDiff));
+				usedWindows.push(this.doOpenFilesInExistingWindow(windowOnFolderPath, filesToOpen, filesToCreate, filesToDiff, filesToWait));
 
 				// Reset these because we handled them
 				filesToOpen = [];
 				filesToCreate = [];
 				filesToDiff = [];
+				filesToWait = void 0;
 
 				openFolderInNewWindow = true; // any other folders to open must open in new window then
 			}
@@ -630,12 +641,13 @@ export class WindowsManager implements IWindowsMainService {
 				}
 
 				// Do open folder
-				usedWindows.push(this.doOpenFolderOrWorkspace(openConfig, { folderPath: folderToOpen }, openFolderInNewWindow, filesToOpen, filesToCreate, filesToDiff));
+				usedWindows.push(this.doOpenFolderOrWorkspace(openConfig, { folderPath: folderToOpen }, openFolderInNewWindow, filesToOpen, filesToCreate, filesToDiff, filesToWait));
 
 				// Reset these because we handled them
 				filesToOpen = [];
 				filesToCreate = [];
 				filesToDiff = [];
+				filesToWait = void 0;
 
 				openFolderInNewWindow = true; // any other folders to open must open in new window then
 			});
@@ -651,6 +663,7 @@ export class WindowsManager implements IWindowsMainService {
 					filesToOpen,
 					filesToCreate,
 					filesToDiff,
+					filesToWait,
 					forceNewWindow: true,
 					emptyWindowBackupFolder
 				}));
@@ -659,6 +672,7 @@ export class WindowsManager implements IWindowsMainService {
 				filesToOpen = [];
 				filesToCreate = [];
 				filesToDiff = [];
+				filesToWait = void 0;
 
 				openFolderInNewWindow = true; // any other folders to open must open in new window then
 			});
@@ -681,11 +695,11 @@ export class WindowsManager implements IWindowsMainService {
 		return arrays.distinct(usedWindows);
 	}
 
-	private doOpenFilesInExistingWindow(window: CodeWindow, filesToOpen: IPath[], filesToCreate: IPath[], filesToDiff: IPath[]): CodeWindow {
+	private doOpenFilesInExistingWindow(window: CodeWindow, filesToOpen: IPath[], filesToCreate: IPath[], filesToDiff: IPath[], filesToWait: IPathsToWaitFor): CodeWindow {
 		window.focus(); // make sure window has focus
 
 		window.ready().then(readyWindow => {
-			readyWindow.send('vscode:openFiles', { filesToOpen, filesToCreate, filesToDiff });
+			readyWindow.send('vscode:openFiles', { filesToOpen, filesToCreate, filesToDiff, filesToWait });
 		});
 
 		return window;
@@ -701,7 +715,7 @@ export class WindowsManager implements IWindowsMainService {
 		return window;
 	}
 
-	private doOpenFolderOrWorkspace(openConfig: IOpenConfiguration, folderOrWorkspace: IPathToOpen, openInNewWindow: boolean, filesToOpen: IPath[], filesToCreate: IPath[], filesToDiff: IPath[], windowToUse?: CodeWindow): CodeWindow {
+	private doOpenFolderOrWorkspace(openConfig: IOpenConfiguration, folderOrWorkspace: IPathToOpen, openInNewWindow: boolean, filesToOpen: IPath[], filesToCreate: IPath[], filesToDiff: IPath[], filesToWait: IPathsToWaitFor, windowToUse?: CodeWindow): CodeWindow {
 		const browserWindow = this.openInBrowserWindow({
 			userEnv: openConfig.userEnv,
 			cli: openConfig.cli,
@@ -711,6 +725,7 @@ export class WindowsManager implements IWindowsMainService {
 			filesToOpen,
 			filesToCreate,
 			filesToDiff,
+			filesToWait,
 			forceNewWindow: openInNewWindow,
 			windowToUse
 		});
@@ -1028,6 +1043,7 @@ export class WindowsManager implements IWindowsMainService {
 		configuration.filesToOpen = options.filesToOpen;
 		configuration.filesToCreate = options.filesToCreate;
 		configuration.filesToDiff = options.filesToDiff;
+		configuration.filesToWait = options.filesToWait;
 		configuration.nodeCachedDataDir = this.environmentService.nodeCachedDataDir;
 
 		// if we know the backup folder upfront (for empty windows to restore), we can set it
@@ -1122,6 +1138,9 @@ export class WindowsManager implements IWindowsMainService {
 
 				// Load it
 				window.load(configuration);
+
+				// Signal event
+				this._onWindowLoad.fire(window.id);
 			}
 		});
 
@@ -1361,8 +1380,8 @@ export class WindowsManager implements IWindowsMainService {
 	}
 
 	private onBeforeWindowUnload(e: IWindowUnloadEvent): void {
-		const windowClosing = e.reason === UnloadReason.CLOSE;
-		const windowLoading = e.reason === UnloadReason.LOAD;
+		const windowClosing = (e.reason === UnloadReason.CLOSE);
+		const windowLoading = (e.reason === UnloadReason.LOAD);
 		if (!windowClosing && !windowLoading) {
 			return; // only interested when window is closing or loading
 		}
@@ -1470,14 +1489,19 @@ export class WindowsManager implements IWindowsMainService {
 		this.open({ context, cli: this.environmentService.args, forceNewWindow: true, forceEmpty: true });
 	}
 
-	public waitForWindowClose(windowId: number): TPromise<void> {
+	public waitForWindowCloseOrLoad(windowId: number): TPromise<void> {
 		return new TPromise<void>(c => {
-			const toDispose = this.onWindowClose(id => {
+			function handler(id: number) {
 				if (id === windowId) {
-					toDispose.dispose();
+					closeListener.dispose();
+					loadListener.dispose();
+
 					c(null);
 				}
-			});
+			}
+
+			const closeListener = this.onWindowClose(id => handler(id));
+			const loadListener = this.onWindowLoad(id => handler(id));
 		});
 	}
 
