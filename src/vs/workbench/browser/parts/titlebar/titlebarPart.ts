@@ -27,11 +27,10 @@ import nls = require('vs/nls');
 import * as labels from 'vs/base/common/labels';
 import { EditorInput, toResource } from 'vs/workbench/common/editor';
 import { IEnvironmentService } from 'vs/platform/environment/common/environment';
-import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
+import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
 import { Verbosity } from 'vs/platform/editor/common/editor';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { TITLE_BAR_ACTIVE_BACKGROUND, TITLE_BAR_ACTIVE_FOREGROUND, TITLE_BAR_INACTIVE_FOREGROUND, TITLE_BAR_INACTIVE_BACKGROUND, TITLE_BAR_BORDER } from 'vs/workbench/common/theme';
-import URI from 'vs/base/common/uri';
 import { IPartService } from 'vs/workbench/services/part/common/partService';
 
 export class TitlebarPart extends Part implements ITitleService {
@@ -101,8 +100,9 @@ export class TitlebarPart extends Part implements ITitleService {
 		this.toUnbind.push(DOM.addDisposableListener(window, DOM.EventType.FOCUS, () => this.onFocus()));
 		this.toUnbind.push(this.configurationService.onDidUpdateConfiguration(() => this.onConfigurationChanged(true)));
 		this.toUnbind.push(this.editorGroupService.onEditorsChanged(() => this.onEditorsChanged()));
-		this.toUnbind.push(this.contextService.onDidChangeWorkspaceRoots(() => this.onDidChangeWorkspaceRoots()));
-		this.toUnbind.push(this.contextService.onDidChangeWorkspaceName(() => this.onDidChangeWorkspaceName()));
+		this.toUnbind.push(this.contextService.onDidChangeWorkspaceFolders(() => this.setTitle(this.getWindowTitle())));
+		this.toUnbind.push(this.contextService.onDidChangeWorkbenchState(() => this.setTitle(this.getWindowTitle())));
+		this.toUnbind.push(this.contextService.onDidChangeWorkspaceName(() => this.setTitle(this.getWindowTitle())));
 	}
 
 	private onBlur(): void {
@@ -113,14 +113,6 @@ export class TitlebarPart extends Part implements ITitleService {
 	private onFocus(): void {
 		this.isInactive = false;
 		this.updateStyles();
-	}
-
-	private onDidChangeWorkspaceRoots(): void {
-		this.setTitle(this.getWindowTitle());
-	}
-
-	private onDidChangeWorkspaceName(): void {
-		this.setTitle(this.getWindowTitle());
 	}
 
 	private onConfigurationChanged(update?: boolean): void {
@@ -192,36 +184,26 @@ export class TitlebarPart extends Part implements ITitleService {
 		const input = this.editorService.getActiveEditorInput();
 		const workspace = this.contextService.getWorkspace();
 
-		// Compute root resource
-		// Single Root Workspace: always the single root workspace in this case
-		// Multi Root Workspace: workspace configuration file
-		let root: URI;
-		if (this.contextService.hasMultiFolderWorkspace()) {
+		let root;
+		if (workspace.configuration) {
 			root = workspace.configuration;
-		} else if (this.contextService.hasFolderWorkspace()) {
-			root = workspace.roots[0];
+		} else if (workspace.folders.length) {
+			root = workspace.folders[0].uri;
 		}
 
 		// Compute folder resource
 		// Single Root Workspace: always the root single workspace in this case
-		// Multi Root Workspace: root folder of the currently active file if any
-		let folder: URI;
-		if (workspace) {
-			if (workspace.roots.length === 1) {
-				folder = workspace.roots[0];
-			} else {
-				folder = this.contextService.getRoot(toResource(input, { supportSideBySide: true, filter: 'file' }));
-			}
-		}
+		// Otherwise: root folder of the currently active file if any
+		let folder = this.contextService.getWorkbenchState() === WorkbenchState.FOLDER ? workspace.folders[0] : this.contextService.getWorkspaceFolder(toResource(input, { supportSideBySide: true, filter: 'file' }));
 
 		// Variables
 		const activeEditorShort = input ? input.getTitle(Verbosity.SHORT) : '';
 		const activeEditorMedium = input ? input.getTitle(Verbosity.MEDIUM) : activeEditorShort;
 		const activeEditorLong = input ? input.getTitle(Verbosity.LONG) : activeEditorMedium;
-		const rootName = workspace ? workspace.name : '';
-		const rootPath = workspace ? labels.getPathLabel(root, void 0, this.environmentService) : '';
-		const folderName = folder ? (paths.basename(folder.fsPath) || folder.fsPath) : '';
-		const folderPath = folder ? labels.getPathLabel(folder, void 0, this.environmentService) : '';
+		const rootName = workspace.name;
+		const rootPath = root ? labels.getPathLabel(root, void 0, this.environmentService) : '';
+		const folderName = folder ? (paths.basename(folder.uri.fsPath) || folder.uri.fsPath) : '';
+		const folderPath = folder ? labels.getPathLabel(folder.uri, void 0, this.environmentService) : '';
 		const dirty = input && input.isDirty() ? TitlebarPart.TITLE_DIRTY : '';
 		const appName = this.environmentService.appNameLong;
 		const separator = TitlebarPart.TITLE_SEPARATOR;

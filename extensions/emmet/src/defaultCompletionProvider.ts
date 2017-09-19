@@ -55,7 +55,7 @@ export class DefaultCompletionItemProvider implements vscode.CompletionItemProvi
 				return;
 			}
 
-			let result: vscode.CompletionList = doComplete(document, position, syntax, getEmmetConfiguration(syntax));
+			let result = doComplete(document, position, syntax, getEmmetConfiguration(syntax));
 			let newItems: vscode.CompletionItem[] = [];
 			if (result && result.items) {
 				result.items.forEach(item => {
@@ -95,7 +95,7 @@ export class DefaultCompletionItemProvider implements vscode.CompletionItemProvi
 			return;
 		}
 
-		let currentNode = getNode(rootNode, position);
+		let currentNode = getNode(rootNode, position, true);
 
 		if (!isStyleSheet(syntax)) {
 			const currentHtmlNode = <HtmlNode>currentNode;
@@ -111,7 +111,7 @@ export class DefaultCompletionItemProvider implements vscode.CompletionItemProvi
 			}
 		}
 
-		if (!isValidLocationForEmmetAbbreviation(currentNode, syntax, position)) {
+		if (!isValidLocationForEmmetAbbreviation(currentNode, syntax, position, document.getText(document.getWordRangeAtPosition(position)))) {
 			return;
 		}
 		return syntax;

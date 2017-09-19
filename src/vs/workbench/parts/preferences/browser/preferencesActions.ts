@@ -8,10 +8,11 @@ import { TPromise } from 'vs/base/common/winjs.base';
 import * as nls from 'vs/nls';
 import URI from 'vs/base/common/uri';
 import { Action } from 'vs/base/common/actions';
+import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { IModeService } from 'vs/editor/common/services/modeService';
 import { IQuickOpenService, IPickOpenEntry, IFilePickOpenEntry } from 'vs/platform/quickOpen/common/quickOpen';
 import { IPreferencesService, getSettingsTargetName } from 'vs/workbench/parts/preferences/common/preferences';
-import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
+import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
 import { ConfigurationTarget } from 'vs/workbench/services/configuration/common/configurationEditing';
 
 export class OpenGlobalSettingsAction extends Action {
@@ -73,6 +74,8 @@ export class OpenWorkspaceSettingsAction extends Action {
 	public static ID = 'workbench.action.openWorkspaceSettings';
 	public static LABEL = nls.localize('openWorkspaceSettings', "Open Workspace Settings");
 
+	private disposables: IDisposable[] = [];
+
 	constructor(
 		id: string,
 		label: string,
@@ -80,11 +83,21 @@ export class OpenWorkspaceSettingsAction extends Action {
 		@IWorkspaceContextService private workspaceContextService: IWorkspaceContextService
 	) {
 		super(id, label);
-		this.enabled = this.workspaceContextService.hasWorkspace();
+		this.update();
+		this.workspaceContextService.onDidChangeWorkbenchState(() => this.update(), this, this.disposables);
+	}
+
+	private update(): void {
+		this.enabled = this.workspaceContextService.getWorkbenchState() !== WorkbenchState.EMPTY;
 	}
 
 	public run(event?: any): TPromise<any> {
 		return this.preferencesService.openWorkspaceSettings();
+	}
+
+	public dispose(): void {
+		this.disposables = dispose(this.disposables);
+		super.dispose();
 	}
 }
 
@@ -92,6 +105,9 @@ export class OpenFolderSettingsAction extends Action {
 
 	public static ID = 'workbench.action.openFolderSettings';
 	public static LABEL = nls.localize('openFolderSettings', "Open Folder Settings");
+
+	private disposables: IDisposable[] = [];
+
 
 	constructor(
 		id: string,
@@ -101,13 +117,18 @@ export class OpenFolderSettingsAction extends Action {
 		@IQuickOpenService private quickOpenService: IQuickOpenService
 	) {
 		super(id, label);
-		this.enabled = this.workspaceContextService.hasMultiFolderWorkspace();
+		this.update();
+		this.workspaceContextService.onDidChangeWorkbenchState(() => this.update(), this, this.disposables);
+	}
+
+	private update(): void {
+		this.enabled = this.workspaceContextService.getWorkbenchState() === WorkbenchState.WORKSPACE;
 	}
 
 	public run(): TPromise<any> {
-		const picks: IPickOpenEntry[] = this.workspaceContextService.getWorkspace().roots.map((root, index) => {
+		const picks: IPickOpenEntry[] = this.workspaceContextService.getWorkspace().folders.map((folder, index) => {
 			return <IPickOpenEntry>{
-				label: getSettingsTargetName(ConfigurationTarget.FOLDER, root, this.workspaceContextService),
+				label: getSettingsTargetName(ConfigurationTarget.FOLDER, folder.uri, this.workspaceContextService),
 				id: `${index}`
 			};
 		});
@@ -115,11 +136,16 @@ export class OpenFolderSettingsAction extends Action {
 		return this.quickOpenService.pick(picks, { placeHolder: nls.localize('pickFolder', "Select Folder") })
 			.then(pick => {
 				if (pick) {
-					return this.preferencesService.openFolderSettings(this.workspaceContextService.getWorkspace().roots[parseInt(pick.id)]);
+					return this.preferencesService.openFolderSettings(this.workspaceContextService.getWorkspace().folders[parseInt(pick.id)].uri);
 				}
 				return undefined;
 			});
 
+	}
+
+	public dispose(): void {
+		this.disposables = dispose(this.disposables);
+		super.dispose();
 	}
 }
 

@@ -41,12 +41,12 @@ import { QuickOpenController } from 'vs/workbench/browser/parts/quickopen/quickO
 import { getServices } from 'vs/platform/instantiation/common/extensions';
 import { WorkbenchEditorService } from 'vs/workbench/services/editor/browser/editorService';
 import { Position, Parts, IPartService, ILayoutOptions } from 'vs/workbench/services/part/common/partService';
-import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
+import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
 import { IStorageService, StorageScope } from 'vs/platform/storage/common/storage';
 import { ContextMenuService } from 'vs/workbench/services/contextview/electron-browser/contextmenuService';
 import { WorkbenchKeybindingService } from 'vs/workbench/services/keybinding/electron-browser/keybindingService';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { WorkspaceService } from 'vs/workbench/services/configuration/node/configuration';
+import { WorkspaceService, DefaultConfigurationExportHelper } from 'vs/workbench/services/configuration/node/configuration';
 import { IConfigurationEditingService } from 'vs/workbench/services/configuration/common/configurationEditing';
 import { ConfigurationEditingService } from 'vs/workbench/services/configuration/node/configurationEditingService';
 import { IJSONEditingService } from 'vs/workbench/services/configuration/common/jsonEditing';
@@ -83,7 +83,7 @@ import { ProgressService2 } from 'vs/workbench/services/progress/browser/progres
 import { TextModelResolverService } from 'vs/workbench/services/textmodelResolver/common/textModelResolverService';
 import { ITextModelService } from 'vs/editor/common/services/resolverService';
 import { ServiceCollection } from 'vs/platform/instantiation/common/serviceCollection';
-import { ILifecycleService, ShutdownReason, ShutdownEvent } from 'vs/platform/lifecycle/common/lifecycle';
+import { ILifecycleService, ShutdownReason } from 'vs/platform/lifecycle/common/lifecycle';
 import { IWindowService, IWindowConfiguration as IWindowSettings, IWindowConfiguration, IPath } from 'vs/platform/windows/common/windows';
 import { IMessageService } from 'vs/platform/message/common/message';
 import { IStatusbarService } from 'vs/platform/statusbar/common/statusbar';
@@ -95,11 +95,9 @@ import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { IWorkbenchActionRegistry, Extensions } from 'vs/workbench/common/actions';
 import { OpenRecentAction, ToggleDevToolsAction, ReloadWindowAction, ShowPreviousWindowTab, MoveWindowTabToNewWindow, MergeAllWindowTabs, ShowNextWindowTab, ToggleWindowTabsBar } from 'vs/workbench/electron-browser/actions';
 import { KeyMod, KeyCode } from 'vs/base/common/keyCodes';
-import { IWorkspaceEditingService, IWorkspaceMigrationService } from 'vs/workbench/services/workspace/common/workspaceEditing';
+import { IWorkspaceEditingService } from 'vs/workbench/services/workspace/common/workspaceEditing';
 import { WorkspaceEditingService } from 'vs/workbench/services/workspace/node/workspaceEditingService';
 import URI from 'vs/base/common/uri';
-import { isWorkspaceIdentifier } from 'vs/platform/workspaces/common/workspaces';
-import { WorkspaceMigrationService } from 'vs/workbench/services/workspace/node/workspaceMigrationService';
 
 export const MessagesVisibleContext = new RawContextKey<boolean>('globalMessageVisible', false);
 export const EditorsVisibleContext = new RawContextKey<boolean>('editorIsOpen', false);
@@ -179,7 +177,6 @@ export class Workbench implements IPartService {
 	private keybindingService: IKeybindingService;
 	private backupFileService: IBackupFileService;
 	private configurationEditingService: IConfigurationEditingService;
-	private workspaceMigrationService: WorkspaceMigrationService;
 	private fileService: IFileService;
 	private titlebarPart: TitlebarPart;
 	private activitybarPart: ActivitybarPart;
@@ -444,7 +441,7 @@ export class Workbench implements IPartService {
 		}
 
 		// Empty workbench
-		else if (!this.contextService.hasWorkspace() && this.openUntitledFile()) {
+		else if (this.contextService.getWorkbenchState() === WorkbenchState.EMPTY && this.openUntitledFile()) {
 			if (this.editorPart.hasEditorsToRestore()) {
 				return TPromise.as([]); // do not open any empty untitled file if we have editors to restore
 			}
@@ -503,7 +500,6 @@ export class Workbench implements IPartService {
 	private initServices(): void {
 		const { serviceCollection } = this.workbenchParams;
 
-		this.toDispose.push(this.lifecycleService.onWillShutdown(event => this.onWillShutdown(event)));
 		this.toDispose.push(this.lifecycleService.onShutdown(this.shutdownComponents, this));
 
 		// Services we contribute
@@ -610,10 +606,6 @@ export class Workbench implements IPartService {
 		// Configuration Resolver
 		serviceCollection.set(IConfigurationResolverService, new SyncDescriptor(ConfigurationResolverService, process.env));
 
-		// Workspace Migrating
-		this.workspaceMigrationService = this.instantiationService.createInstance(WorkspaceMigrationService);
-		serviceCollection.set(IWorkspaceMigrationService, this.workspaceMigrationService);
-
 		// Quick open service (quick open controller)
 		this.quickOpen = this.instantiationService.createInstance(QuickOpenController);
 		this.toDispose.push(this.quickOpen);
@@ -630,12 +622,14 @@ export class Workbench implements IPartService {
 		Registry.as<IActionBarRegistry>(ActionBarExtensions.Actionbar).setInstantiationService(this.instantiationService);
 		Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).setInstantiationService(this.instantiationService);
 		Registry.as<IEditorRegistry>(EditorExtensions.Editors).setInstantiationService(this.instantiationService);
+
+		this.instantiationService.createInstance(DefaultConfigurationExportHelper);
 	}
 
 	private initSettings(): void {
 
 		// Sidebar visibility
-		this.sideBarHidden = this.storageService.getBoolean(Workbench.sidebarHiddenSettingKey, StorageScope.WORKSPACE, !this.contextService.hasWorkspace());
+		this.sideBarHidden = this.storageService.getBoolean(Workbench.sidebarHiddenSettingKey, StorageScope.WORKSPACE, this.contextService.getWorkbenchState() === WorkbenchState.EMPTY);
 
 		// Panel part visibility
 		const panelRegistry = Registry.as<PanelRegistry>(PanelExtensions.Panels);
@@ -830,7 +824,7 @@ export class Workbench implements IPartService {
 		return promise.then(() => {
 
 			// Remember in settings
-			const defaultHidden = !this.contextService.hasWorkspace();
+			const defaultHidden = this.contextService.getWorkbenchState() === WorkbenchState.EMPTY;
 			if (hidden !== defaultHidden) {
 				this.storageService.store(Workbench.sidebarHiddenSettingKey, hidden ? 'true' : 'false', StorageScope.WORKSPACE);
 			} else {
@@ -950,19 +944,6 @@ export class Workbench implements IPartService {
 		}
 	}
 
-	private onWillShutdown(event: ShutdownEvent): void {
-
-		if (event.reason === ShutdownReason.RELOAD) {
-			const workspace = event.payload;
-
-			// We are transitioning into a workspace from an empty workspace or workspace, and
-			// as such we want to migrate UI state from the current workspace to the new one.
-			if (isWorkspaceIdentifier(workspace)) {
-				event.veto(this.instantiationService.createInstance(WorkspaceMigrationService).migrate(workspace).then(() => false, () => false));
-			}
-		}
-	}
-
 	private shutdownComponents(reason = ShutdownReason.QUIT): void {
 
 		// Restore sidebar if we are being shutdown as a matter of a reload
@@ -1054,7 +1035,7 @@ export class Workbench implements IPartService {
 		// Close when empty: check if we should close the window based on the setting
 		// Overruled by: window has a workspace opened or this window is for extension development
 		// or setting is disabled. Also enabled when running with --wait from the command line.
-		if (visibleEditors === 0 && !this.contextService.hasWorkspace() && !this.environmentService.isExtensionDevelopment) {
+		if (visibleEditors === 0 && this.contextService.getWorkbenchState() === WorkbenchState.EMPTY && !this.environmentService.isExtensionDevelopment) {
 			const closeWhenEmpty = this.configurationService.lookup<boolean>(Workbench.closeWhenEmptyConfigurationKey).value;
 			if (closeWhenEmpty || this.environmentService.args.wait) {
 				this.closeEmptyWindowScheduler.schedule();
