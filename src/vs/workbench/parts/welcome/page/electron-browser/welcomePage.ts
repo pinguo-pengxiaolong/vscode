@@ -365,13 +365,13 @@ class WelcomePage {
 				this.messageService.show(Severity.Info, strings.alreadyInstalled.replace('{0}', extensionSuggestion.name));
 				return;
 			}
-			const foundAndInstalled = installedExtension ? TPromise.as(true) : this.extensionGalleryService.query({ names: [extensionSuggestion.id] })
+			const foundAndInstalled = installedExtension ? TPromise.as(true) : this.extensionGalleryService.query({ names: [extensionSuggestion.id], source: telemetryFrom })
 				.then(result => {
 					const [extension] = result.firstPage;
 					if (!extension) {
 						return false;
 					}
-					return this.extensionManagementService.installFromGallery(extension, false)
+					return this.extensionManagementService.installFromGallery(extension)
 						.then(() => {
 							// TODO: Do this as part of the install to avoid multiple events.
 							return this.extensionEnablementService.setEnablement(extensionSuggestion.id, false);

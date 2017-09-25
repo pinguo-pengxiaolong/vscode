@@ -15,7 +15,7 @@ import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/edi
 import { IHistoryService } from 'vs/workbench/services/history/common/history';
 import { FileChangesEvent, IFileService, FileChangeType } from 'vs/platform/files/common/files';
 import { Selection } from 'vs/editor/common/core/selection';
-import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
+import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { IStorageService, StorageScope } from 'vs/platform/storage/common/storage';
 import { ILifecycleService } from 'vs/platform/lifecycle/common/lifecycle';
@@ -720,7 +720,10 @@ export class HistoryService extends BaseHistoryService implements IHistoryServic
 			if (input instanceof EditorInput) {
 				const factory = registry.getEditorInputFactory(input.getTypeId());
 				if (factory) {
-					return { editorInputJSON: { typeId: input.getTypeId(), deserialized: factory.serialize(input) } } as ISerializedEditorHistoryEntry;
+					const deserialized = factory.serialize(input);
+					if (deserialized) {
+						return { editorInputJSON: { typeId: input.getTypeId(), deserialized } } as ISerializedEditorHistoryEntry;
+					}
 				}
 			}
 
@@ -754,10 +757,11 @@ export class HistoryService extends BaseHistoryService implements IHistoryServic
 			}
 
 			// Editor input: via factory
-			if (serializedEditorHistoryEntry.editorInputJSON) {
-				const factory = registry.getEditorInputFactory(serializedEditorHistoryEntry.editorInputJSON.typeId);
+			const { editorInputJSON } = serializedEditorHistoryEntry;
+			if (editorInputJSON && editorInputJSON.deserialized) {
+				const factory = registry.getEditorInputFactory(editorInputJSON.typeId);
 				if (factory) {
-					return factory.deserialize(this.instantiationService, serializedEditorHistoryEntry.editorInputJSON.deserialized);
+					return factory.deserialize(this.instantiationService, editorInputJSON.deserialized);
 				}
 			}
 
@@ -766,7 +770,8 @@ export class HistoryService extends BaseHistoryService implements IHistoryServic
 	}
 
 	public getLastActiveWorkspaceRoot(): URI {
-		if (this.contextService.getWorkbenchState() === WorkbenchState.EMPTY) {
+		const folders = this.contextService.getWorkspace().folders;
+		if (folders.length === 0) {
 			return void 0;
 		}
 
@@ -785,6 +790,6 @@ export class HistoryService extends BaseHistoryService implements IHistoryServic
 		}
 
 		// fallback to first workspace
-		return this.contextService.getWorkspace().folders[0].uri;
+		return folders[0].uri;
 	}
 }

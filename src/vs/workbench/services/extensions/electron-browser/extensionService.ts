@@ -32,6 +32,7 @@ import { ExtHostCustomersRegistry } from 'vs/workbench/api/electron-browser/extH
 import { IWindowService } from 'vs/platform/windows/common/windows';
 import { Action } from 'vs/base/common/actions';
 import { IDisposable } from 'vs/base/common/lifecycle';
+import { startTimer } from 'vs/base/node/startupTimers';
 
 const SystemExtensionsRoot = path.normalize(path.join(URI.parse(require.toUrl('')).fsPath, '..', 'extensions'));
 
@@ -239,7 +240,7 @@ export class ExtensionService implements IExtensionService {
 	}
 
 	protected _activateByEvent(activationEvent: string): TPromise<void> {
-		if (this._extensionHostProcessFinishedActivateEvents[activationEvent]) {
+		if (this._extensionHostProcessFinishedActivateEvents[activationEvent] || !this._extensionHostProcessProxy) {
 			return NO_OP_VOID_PROMISE;
 		}
 		return this._extensionHostProcessProxy.then((proxy) => {
@@ -319,7 +320,12 @@ export class ExtensionService implements IExtensionService {
 			let messageHandler = (msg: IMessage) => this._handleExtensionPointMessage(msg);
 
 			for (let i = 0, len = extensionPoints.length; i < len; i++) {
-				ExtensionService._handleExtensionPoint(extensionPoints[i], availableExtensions, messageHandler);
+				const clock = startTimer(`handleExtensionPoint:${extensionPoints[i].name}`);
+				try {
+					ExtensionService._handleExtensionPoint(extensionPoints[i], availableExtensions, messageHandler);
+				} finally {
+					clock.stop();
+				}
 			}
 
 			this._barrier.open();
