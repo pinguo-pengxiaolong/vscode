@@ -145,6 +145,15 @@ export function createApiFactory(
 					return undefined;
 				}
 				this._seen.add(apiName);
+				/* __GDPR__
+					"apiUsage" : {
+						"name" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
+						"extension": { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
+						"${include}": [
+							"${MainThreadData}"
+						]
+					}
+				*/
 				return mainThreadTelemetry.$publicLog('apiUsage', {
 					name: apiName,
 					extension: extension.id
@@ -439,12 +448,12 @@ export function createApiFactory(
 				let uriPromise: TPromise<URI>;
 
 				let options = uriOrFileNameOrOptions as { language?: string; content?: string; };
-				if (!options || (options && (typeof options.language === 'string' || typeof options.content === 'string'))) {
-					uriPromise = extHostDocuments.createDocumentData(options);
-				} else if (typeof uriOrFileNameOrOptions === 'string') {
+				if (typeof uriOrFileNameOrOptions === 'string') {
 					uriPromise = TPromise.as(URI.file(uriOrFileNameOrOptions));
 				} else if (uriOrFileNameOrOptions instanceof URI) {
 					uriPromise = TPromise.as(<URI>uriOrFileNameOrOptions);
+				} else if (!options || typeof options === 'object') {
+					uriPromise = extHostDocuments.createDocumentData(options);
 				} else {
 					throw new Error('illegal argument - uriOrFileNameOrOptions');
 				}
@@ -494,6 +503,16 @@ export function createApiFactory(
 				return extHostSCM.getLastInputBox(extension);
 			},
 			createSourceControl(id: string, label: string, rootUri?: vscode.Uri) {
+				/* __GDPR__
+					"registerSCMProvider" : {
+						"extensionId" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
+						"providerId": { "classification": "PublicNonPersonalData", "purpose": "FeatureInsight" },
+						"providerLabel": { "classification": "PublicPersonalData", "purpose": "FeatureInsight" },
+						"${include}": [
+							"${MainThreadData}"
+						]
+					}
+				*/
 				mainThreadTelemetry.$publicLog('registerSCMProvider', {
 					extensionId: extension.id,
 					providerId: id,

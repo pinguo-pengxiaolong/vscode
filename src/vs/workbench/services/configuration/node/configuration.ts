@@ -182,6 +182,7 @@ function validateProperties(configuration: IConfigurationNode, collector: Extens
 			const message = validateProperty(key);
 			const propertyConfiguration = configuration.properties[key];
 			propertyConfiguration.scope = propertyConfiguration.scope && propertyConfiguration.scope.toString() === 'resource' ? ConfigurationScope.RESOURCE : ConfigurationScope.WINDOW;
+			propertyConfiguration.isFromExtensions = true;
 			if (message) {
 				collector.warn(message);
 				delete properties[key];
@@ -536,10 +537,10 @@ export class WorkspaceService extends Disposable implements IWorkspaceConfigurat
 				this.workspace.folders = configuredFolders;
 				this.onFoldersChanged()
 					.then(configurationChanged => {
-						this._onDidChangeWorkspaceFolders.fire(changes);
 						if (configurationChanged) {
 							this.triggerConfigurationChange();
 						}
+						this._onDidChangeWorkspaceFolders.fire(changes);
 					});
 			} else {
 				const configurationChanged = this.updateWorkspaceConfiguration(true);
