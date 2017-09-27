@@ -1658,10 +1658,15 @@ declare module 'vscode' {
 		validateInput?(value: string): string | undefined | null;
 	}
 
+	/**
+	 * A relative pattern is a helper to construct glob patterns that are matched
+	 * relatively to a base path. The base path can either be an absolute file path
+	 * or a [workspace folder](#WorkspaceFolder).
+	 */
 	class RelativePattern {
 
 		/**
-		 * A base file path to which the pattern will be matched against relatively.
+		 * A base file path to which this pattern will be matched against relatively.
 		 */
 		base: string;
 
@@ -1674,7 +1679,15 @@ declare module 'vscode' {
 		 */
 		pattern: string;
 
-		constructor(pattern: string, base: WorkspaceFolder | string)
+		/**
+		 * Creates a new relative pattern object with a base path and pattern to match. This pattern
+		 * will be matched on file paths relative to the base path.
+		 *
+		 * @param base A base file path to which this pattern will be matched against relatively.
+		 * @param pattern A file glob pattern like `*.{ts,js}` that will be matched on file paths
+		 * relative to the base path.
+		 */
+		constructor(base: WorkspaceFolder | string, pattern: string)
 	}
 
 	/**
@@ -4365,7 +4378,7 @@ declare module 'vscode' {
 		 * to control options of the editor is being shown. Might change the [active editor](#window.activeTextEditor).
 		 *
 		 * @param document A text document to be shown.
-		 * @param options [Editor options](#ShowTextDocumentOptions) to configure the behavior of showing the [editor](#TextEditor).
+		 * @param options [Editor options](#TextDocumentShowOptions) to configure the behavior of showing the [editor](#TextEditor).
 		 * @return A promise that resolves to an [editor](#TextEditor).
 		 */
 		export function showTextDocument(document: TextDocument, options?: TextDocumentShowOptions): Thenable<TextEditor>;
@@ -4376,7 +4389,7 @@ declare module 'vscode' {
 		 * @see [openTextDocument](#openTextDocument)
 		 *
 		 * @param uri A resource identifier.
-		 * @param options [Editor options](#ShowTextDocumentOptions) to configure the behavior of showing the [editor](#TextEditor).
+		 * @param options [Editor options](#TextDocumentShowOptions) to configure the behavior of showing the [editor](#TextEditor).
 		 * @return A promise that resolves to an [editor](#TextEditor).
 		 */
 		export function showTextDocument(uri: Uri, options?: TextDocumentShowOptions): Thenable<TextEditor>;
