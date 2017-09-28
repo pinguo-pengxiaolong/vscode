@@ -92,7 +92,7 @@ function setupIPC(accessor: ServicesAccessor): TPromise<Server> {
 	}
 
 	function setup(retry: boolean): TPromise<Server> {
-		console.log('port:', environmentService.mainIPCHandle)
+		console.info('port:', environmentService.mainIPCHandle)
 		return serve(environmentService.mainIPCHandle).then(server => {
 			if (platform.isMacintosh) {
 				app.dock.show(); // dock might be hidden at this case due to a retry
