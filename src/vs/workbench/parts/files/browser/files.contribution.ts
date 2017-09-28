@@ -235,6 +235,13 @@ configurationRegistry.registerConfiguration({
 			'overridable': true,
 			'scope': ConfigurationScope.RESOURCE
 		},
+		'files.trimFinalNewlines': {
+			'type': 'boolean',
+			'default': false,
+			'description': nls.localize('trimFinalNewlines', "When enabled, will trim all new lines after the final new line at the end of the file when saving it."),
+			'overridable': true,
+			'scope': ConfigurationScope.RESOURCE
+		},
 		'files.autoSave': {
 			'type': 'string',
 			'enum': [AutoSaveConfiguration.OFF, AutoSaveConfiguration.AFTER_DELAY, AutoSaveConfiguration.ON_FOCUS_CHANGE, , AutoSaveConfiguration.ON_WINDOW_CHANGE],
@@ -291,7 +298,8 @@ configurationRegistry.registerConfiguration({
 			'type': 'boolean',
 			'default': false,
 			'description': nls.localize('formatOnSave', "Format a file on save. A formatter must be available, the file must not be auto-saved, and editor must not be shutting down."),
-			'overridable': true
+			'overridable': true,
+			'scope': ConfigurationScope.RESOURCE
 		}
 	}
 });

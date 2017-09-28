@@ -733,7 +733,8 @@ declare module 'vscode' {
 		/**
 		 * An optional view column in which the [editor](#TextEditor) should be shown.
 		 * The default is the [one](#ViewColumn.One), other values are adjusted to
-		 * be __Min(column, columnCount + 1)__.
+		 * be `Min(column, columnCount + 1)`, the [active](#ViewColumn.Active)-column is
+		 * not adjusted.
 		 */
 		viewColumn?: ViewColumn;
 
@@ -1504,8 +1505,13 @@ declare module 'vscode' {
 	}
 
 	/**
- * Options to configure the behaviour of a file open dialog.
- */
+	 * Options to configure the behaviour of a file open dialog.
+	 *
+	 * * Note 1: A dialog can select files, folders, or both. This is not true for Windows
+	 * which enforces to open either files or folder, but *not both*.
+	 * * Note 2: Explictly setting `canSelectFiles` and `canSelectFolders` to `false` is futile
+	 * and the editor then silently adjusts the options to select files.
+	 */
 	export interface OpenDialogOptions {
 		/**
 		 * The resource the dialog shows when opened.
@@ -1518,32 +1524,31 @@ declare module 'vscode' {
 		openLabel?: string;
 
 		/**
-		 * Only allow to select files. *Note* that not all operating systems support
-		 * to select files and folders in one dialog instance.
+		 * Allow to select files, defaults to `true`.
 		 */
-		openFiles?: boolean;
+		canSelectFiles?: boolean;
 
 		/**
-		 * Only allow to select folders. *Note* that not all operating systems support
-		 * to select files and folders in one dialog instance.
+		 * Allow to select folders, defaults to `false`.
 		 */
-		openFolders?: boolean;
+		canSelectFolders?: boolean;
 
 		/**
 		 * Allow to select many files or folders.
 		 */
-		openMany?: boolean;
+		canSelectMany?: boolean;
 
 		/**
-		 * A set of file filters that are shown in the dialog, e.g.
+		 * A set of file filters that are used by the dialog. Each entry is a human readable label,
+		 * like "TypeScript", and an array of extensions, e.g.
 		 * ```ts
 		 * {
-		 * 	['Images']: ['*.png', '*.jpg']
-		 * 	['TypeScript']: ['*.ts', '*.tsx']
+		 * 	'Images': ['png', 'jpg']
+		 * 	'TypeScript': ['ts', 'tsx']
 		 * }
 		 * ```
 		 */
-		filters: { [name: string]: string[] };
+		filters?: { [name: string]: string[] };
 	}
 
 	/**
@@ -1561,15 +1566,16 @@ declare module 'vscode' {
 		saveLabel?: string;
 
 		/**
-		 * A set of file filters that are shown in the dialog, e.g.
+		 * A set of file filters that are used by the dialog. Each entry is a human readable label,
+		 * like "TypeScript", and an array of extensions, e.g.
 		 * ```ts
 		 * {
-		 * 	['Images']: ['*.png', '*.jpg']
-		 * 	['TypeScript']: ['*.ts', '*.tsx']
+		 * 	'Images': ['png', 'jpg']
+		 * 	'TypeScript': ['ts', 'tsx']
 		 * }
 		 * ```
 		 */
-		filters: { [name: string]: string[] };
+		filters?: { [name: string]: string[] };
 	}
 
 	/**
@@ -3464,9 +3470,24 @@ declare module 'vscode' {
 	 * used to show editors side by side.
 	 */
 	export enum ViewColumn {
+		/**
+		 * A *symbolic* editor column representing the currently
+		 * active column. This value can be used when opening editors, but the
+		 * *resolved* [viewColumn](#TextEditor.viewColumn)-value of editors will always
+		 * be `One`, `Two`, `Three`, or `undefined` but never `Active`.
+		 */
 		Active = -1,
+		/**
+		 * The left most editor column.
+		 */
 		One = 1,
+		/**
+		 * The center editor column.
+		 */
 		Two = 2,
+		/**
+		 * The right most editor column.
+		 */
 		Three = 3
 	}
 
@@ -4366,8 +4387,9 @@ declare module 'vscode' {
 		 * to control where the editor is being shown. Might change the [active editor](#window.activeTextEditor).
 		 *
 		 * @param document A text document to be shown.
-		 * @param column A view column in which the editor should be shown. The default is the [one](#ViewColumn.One), other values
-		 * are adjusted to be __Min(column, columnCount + 1)__.
+		 * @param column A view column in which the [editor](#TextEditor) should be shown. The default is the [one](#ViewColumn.One), other values
+		 * are adjusted to be `Min(column, columnCount + 1)`, the [active](#ViewColumn.Active)-column is
+		 * not adjusted.
 		 * @param preserveFocus When `true` the editor will not take focus.
 		 * @return A promise that resolves to an [editor](#TextEditor).
 		 */
@@ -4559,7 +4581,8 @@ declare module 'vscode' {
 		export function showQuickPick<T extends QuickPickItem>(items: T[] | Thenable<T[]>, options?: QuickPickOptions, token?: CancellationToken): Thenable<T | undefined>;
 
 		/**
-		 * Shows a file open dialog to the user.
+		 * Shows a file open dialog to the user which allows to select a file
+		 * for opening-purposes.
 		 *
 		 * @param options Options that control the dialog.
 		 * @returns A promise that resolves to the selected resources or `undefined`.
@@ -4567,7 +4590,8 @@ declare module 'vscode' {
 		export function showOpenDialog(options: OpenDialogOptions): Thenable<Uri[] | undefined>;
 
 		/**
-		 * Shows a file save dialog to the user.
+		 * Shows a file save dialog to the user which allows to select a file
+		 * for saving-purposes.
 		 *
 		 * @param options Options that control the dialog.
 		 * @returns A promise that resolves to the selected resource or `undefined`.
