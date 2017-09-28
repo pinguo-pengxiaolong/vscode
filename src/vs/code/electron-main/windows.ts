@@ -1141,7 +1141,6 @@ export class WindowsManager implements IWindowsMainService {
 				}
 
 				// Load it
-				// TODO: del
 				console.info('window configuration: ', configuration);
 				window.load(configuration);
 
